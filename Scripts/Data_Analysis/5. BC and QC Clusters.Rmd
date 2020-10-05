@@ -1,0 +1,233 @@
+---
+title: "Batch Correction"
+author: "Regan"
+date: "01/04/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Based on:
+https://bioconductor.org/packages/release/bioc/vignettes/batchelor/inst/doc/correction.html
+
+In this script we normalise the samples, peform batch correction, cluster cells, remove low quality clusters and then repeat the batch correction and clustering.
+
+# Import the single cell experiments for each sample and set the parameters 
+```{r}
+library(scater)
+
+dirBC <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/BC/"
+
+# Initialise the sce containing all samples 
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/All/sce.RDS")
+
+# Select a subset to base the level of batch correct on
+subset <- "SLX" #all cells from a given flow cell lane will be combined into a single sce and will be batch corrected only to cells from other flow cell lanes
+sce$subset <- colData(sce)[subset][,1]
+```
+
+# Normalize each batch using size factors generated from QC
+```{r}
+library(batchelor)
+
+sce <- batchelor::multiBatchNorm(sce, batch=sce$subset)
+```
+
+# Store column data and assays to restore post-batch correction 
+```{r}
+colData <- colData(sce)
+counts <- counts(sce)
+logcounts <- logcounts(sce)
+```
+
+# Model the variance
+```{r}
+library(scran)
+
+fit <- trendVar(sce, block=sce$subset, use.spikes=F)
+dec <- decomposeVar(fit=fit)
+```
+
+# Select the HVGs with +ve biological components to use downstream
+```{r}
+combined.dec <- combineVar(dec)
+chosen.hvgs <- combined.dec$bio > 0
+summary(chosen.hvgs)
+```
+
+# Save a record of the HVGs
+```{r}
+HVG <- rownames(sce[chosen.hvgs,])
+saveRDS(HVG, file = paste0(dirBC,"HVG.RDS"))
+```
+
+# Perform the batch correction
+```{r}
+library(BiocSingular)
+
+sce_BC <- batchelor::fastMNN(sce,
+                             batch=sce$subset,
+                             subset.row=rownames(sce[chosen.hvgs,]),
+                             k=20,#number of nearest neighbours considered 
+                             d=50,#number of pcs used 
+                             auto.merge=T, #the order of merging is important. Set to auto or order by most heterogeneity, if known
+                             BSPARAM = IrlbaParam(deferred=TRUE), #set parallelization
+                             correct.all=T #set correct.all=T otherwise it only corrects chosen.hvg values
+)
+```
+
+# Restore old column data and assays
+```{r}
+colData(sce_BC) <- colData
+counts(sce_BC) <- counts
+logcounts(sce_BC) <- logcounts
+```
+
+# Cluster the batch corrected dataset to identify and remove low quality clusters and doublets
+```{r}
+set.seed(100)
+
+#generate the shared nearest neighbour graph
+snn.gr <- buildSNNGraph(sce_BC, use.dimred="corrected", k = 20)
+
+#apply the walktrap algorithm
+clusters <- igraph::cluster_walktrap(snn.gr, steps = 8) 
+
+#store the clusters in the sce object column-based metadata
+sce_BC$Cluster <- factor(clusters$membership)
+```
+
+# Reduce dimensions for visualization via UMAP
+Note: these are not the UMAP parameters used for the Figures
+```{r}
+set.seed(100)
+sce_BC <- runUMAP(sce_BC)
+```
+
+# Save the sce
+```{r}
+saveRDS(sce_BC, file=paste0(dirBC, "sce_postBC.RDS"))
+```
+
+# Visualize the batch corrected dataset via UMAP by cluster and percent of counts from mitochondrial genes
+```{r}
+set.seed(100)
+pdf(file = paste0(dirBC, "Post BC UMAP.pdf"))
+plotUMAP(sce_BC, colour_by="sampleID", by_exprs_values= "logcounts")
+plotUMAP(sce_BC, colour_by="stage", by_exprs_values= "logcounts")
+plotUMAP(sce_BC, colour_by="fl", by_exprs_values= "logcounts")
+plotUMAP(sce_BC, colour_by="Cluster", by_exprs_values= "logcounts")
+plotUMAP(sce_BC, colour_by="pct_counts_Mito", by_exprs_values= "logcounts")
+plotUMAP(sce_BC, colour_by="log10_total_counts", by_exprs_values= "logcounts")
+dev.off()
+```
+
+# Investigate the cell metrics of each cluster and highlight that cluster on the UMAP
+```{r}
+# Set the cluster number to highlight in black
+clustnum <- 1
+subset <- "Cluster"
+
+sub <- names(colData(sce)) == subset
+sce$subset <- colData(sce)[sub][,1]
+
+# Set the colour category for the cluster of interest
+col.name <- subset
+col <- sce$subset 
+category <- paste0(subset, clustnum)
+
+Nas <- is.na(sce$subset)
+sce$subset[Nas] <- FALSE
+black <- sce$subset == clustnum
+black.sce <- sce[,black]
+
+# Subset the sce to include NA for those of interest
+sce$black <- col
+sce$black[black] <- NA
+
+# Create a colour vector with contrasting colours
+set.seed(200)
+library(RColorBrewer)
+n <- nlevels(sce$black)
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+colvec = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+
+# Plot and save UMAP with cluster of interest coloured in black
+library(scater)
+pdf(paste0(dirBC, category, "-black.pdf", sep = ""), height = 6, width = 9)
+print(plotUMAP(sce, colour_by="black", by_exprs_values = "logcounts") + ggtitle (paste(col.name, "P =", metadata(sce)$perplexity)) + scale_fill_manual(values = colvec, aesthetics = "fill", na.value = "black") + theme(plot.title = element_text(size = rel(2))))
+
+
+# Collect cell metrics for the cluster of interest
+a <- data.frame(
+  Cluster = category,
+  Number_of_cells = sum(black),
+  LogCounts = mean(black.sce$log10_total_counts),
+  Med_LogCounts = median(black.sce$log10_total_counts),
+  LogGenes = mean(black.sce$log10_total_features_by_counts),
+  Pct_Mito = mean(black.sce$pct_counts_Mito),
+  LogRibo =mean(black.sce$log10_total_counts_Ribo)
+)
+
+b <- data.frame(
+  Cluster = "All",
+  Number_of_cells = ncol(sce),
+  LogCounts = mean(sce$log10_total_counts),
+  Med_LogCounts = median(sce$log10_total_counts),
+  LogGenes = mean(sce$log10_total_features_by_counts),
+  Pct_Mito = mean(sce$pct_counts_Mito),
+  LogRibo =mean(sce$log10_total_counts_Ribo)
+)
+
+A <- rbind(a,b)  
+
+c <- c(table(black.sce$sex), table(black.sce$fl), table(black.sce$sampleID))
+
+library(gridExtra)
+grid.arrange(tableGrob((A)),tableGrob(t(c)), newpage = TRUE)
+dev.off()
+```
+
+# Investigate the top differentially expressed genes per cluster, and examine for signs of doublets
+```{r}
+library(scran)
+dirM <- paste0(dirBC, "markers/")
+
+level <- factor(sce$Cluster)
+num_markers <- 200
+
+# Make pairwise comparisons between genes to identify the most DEGs between clusters, which may serve as markers
+markers <- findMarkers(sce, 
+                       group=level, 
+                       direction="up", #look at only upregulated genes
+                       assay.type="logcounts", #use the non-batch corrected gene expression values
+                       block = sce$SLX #block any batch effects
+)
+
+# Save the markers
+saveRDS (markers, file = paste0(dirM, "Cluster_markers.RDS"))
+
+# Save text files of markers for each cluster
+for (i in 1:length(level)){ #repeat for the number of clusters in the sce object
+  marker.set <- markers[[i]]
+  write.table(rownames(marker.set)[1:num_markers], file=paste0(dirM, levels(level)[i]," - first ",num_markers,".txt"), sep="\t", quote=FALSE, col.names=FALSE, row.names = FALSE)
+}
+```
+
+# Remove low quality clusters
+- Clusters 2, 12, 13 removed
+```{r}
+#select the cluster number to remove
+remove <- 2
+
+#remove the low quality cluster
+sce <- sce[,sce$Cluster != remove]
+```
+
+# Save the sce and re-perform batch correction and clustering without the low quality cells
+```{r}
+saveRDS(sce, "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/All/BC/post-QC/sce.RDS")
+```

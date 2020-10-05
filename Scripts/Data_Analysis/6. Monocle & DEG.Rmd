@@ -1,0 +1,275 @@
+---
+title: "Monocole 3"
+author: "Regan"
+date: "12/05/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Based on:
+https://cole-trapnell-lab.github.io/monocle3/docs/introduction/
+
+In this script we will use Monocle3 to perform Leiden community detection (clustering), trajectory analysis, and explore differentially expressed genes around the trajectory branching points, and between clusters.
+
+# Install the beta version of Monocle3 from GitHub
+```{r eval = F}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.10")
+BiocManager::install('SummarizedExperiment') 
+
+
+BiocManager::install(c('BiocGenerics', 'DelayedArray', 'DelayedMatrixStats',
+                       'limma', 'S4Vectors', 'SingleCellExperiment',
+                       'SummarizedExperiment', 'batchelor', 'Matrix.utils'))
+install.packages("devtools")
+devtools::install_github('cole-trapnell-lab/leidenbase')
+devtools::install_github('cole-trapnell-lab/monocle3')
+```
+
+
+# Load the post-QC sce
+```{r}
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/All/BC/post-QC/sce.RDS")
+
+dirM3 <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/"
+```
+
+
+# Convert the sce to a CDS object
+```{r}
+library(monocle3)
+
+exp <- counts(sce)
+c_data <- colData(sce)
+g_data <- c(rowData(sce),  rownames(sce))
+colnames(g_data) <- c("rotation",'gene_short_name')
+cds <- new_cell_data_set(expression_data = exp, cell_metadata = c_data, gene_metadata = g_data)
+```
+
+# Preprocess the cds
+- this normalizes the data and calculates a lower dimensional space
+```{r}
+cds <- preprocess_cds(cds, num_dim = 50)
+```
+
+# Batch correction by matching mutual nearest neighbours (as in 5. BC and QC Clusters) 
+```{r}
+cds <- align_cds(cds, alignment_group = "SLX") #separate batches by flow cell lane, as in 5.
+```
+
+# Compute a projection of the batch corrected dataset into the lower dimensional space
+```{r}
+cds <- reduce_dimension(cds, umap.min_dist = 0.1, umap.n_neighbors = 15, umap.metric = "cosine", preprocess_method = "Aligned")
+
+#save UMAP dimensions in the sce object, for visualization purposes
+sce@int_colData@listData[["reducedDims"]]@listData[["UMAP"]] <- cds@int_colData@listData[["reducedDims"]]@listData[["UMAP"]]
+```
+
+
+# Unsupervised clustering of batch corrected cells using Leiden community detection
+- these are the clusters that we used to explore cell states post-SCI
+```{r}
+# calculate clusters
+cds <- cluster_cells(cds, reduction_method = "UMAP", k=16) 
+
+```
+
+# Perform trajectory analysis on the cells by learning the principle graph
+- each cell is a point in the high dimensional space
+- learning the trajectory of cells in this space allows us to hypothesize the cells' transition through the observed transcriptional profiles
+```{r}
+cds <- learn_graph(cds, use_partition = T, close_loop = F)
+```
+
+# Visualize trajectories and clusters
+- each grey number is a different outcome/cell-fate
+- each black circle is a branch node leading towards the different cell fates
+```{r}
+plot_cells(cds,
+           color_cells_by = "cluster",
+           label_cell_groups=F,
+           label_leaves=TRUE,
+           label_branch_points=F,
+           graph_label_size=2,
+           group_label_size = 3)
+
+#save the plot
+ggsave(paste0(dirM3, "Cluster+Trajectory.pdf"), scale = 0.5, width = 10, height = 8)
+```
+
+# Explore the gene expression patterns around the branch points
+- manually select the cells in the areas of interest
+```{r}
+cds_subset <- choose_cells(cds)
+```
+
+# Find differentially expressed genes at the points of interest
+- using the Moran's I test
+```{r}
+subset_pr_test_res <- graph_test(cds_subset, neighbor_graph="principal_graph", cores=4)
+pr_deg_ids <- row.names(subset(subset_pr_test_res, q_value < 0.001)) 
+```
+
+# Generate the gene modules based on the graph test results
+- Gene modules are clusters of co-expressed genes
+```{r}
+gene_module_df <- find_gene_modules(cds_subset[pr_deg_ids,], resolution=0.001)
+```
+
+
+# Compare modules scores by cluster (or other colData)
+```{r}
+cell_group_df <- tibble::tibble(cell=row.names(colData(cds)), 
+                                cell_group=colData(cds)$Cluster_M3_k16)
+agg_mat <- aggregate_gene_expression(cds, gene_module_df, cell_group_df)
+row.names(agg_mat) <- stringr::str_c("Module ", row.names(agg_mat))
+pheatmap::pheatmap(agg_mat,
+                   scale="column", clustering_method="ward.D2")
+```
+
+# Visualize the subset of cells under investigation via UMAP
+```{r}
+agg_mat <- aggregate_gene_expression(cds_subset, gene_module_df)
+module_dendro <- hclust(dist(agg_mat))
+gene_module_df$module <- factor(gene_module_df$module, 
+                                levels = row.names(agg_mat)[module_dendro$order])
+
+plot_cells(cds_subset,
+           genes=gene_module_df,
+           label_cell_groups=FALSE,
+           show_trajectory_graph=F,
+           cell_size=1)
+```
+
+# Take a look at the genes at the top of modules of interest
+```{r}
+gene_module_df[gene_module_df$module == 1,]
+```
+
+# Investigate the top differentially expressed genes (upregulated) per (Monocle-generated) cluster
+- we used these DEGs to determine the GO enrichment analysis terms for each cluster, and to help with cell type annotations 
+```{r}
+library(scran)
+dirM <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/k=16 cluster markers/FDR < 0.05 & FC > 1.25/0.0001/"
+dir.create(dirM)
+
+# subset the sce object with the Monocle3 derived clusters
+sce$Cluster_M3_k16 <- colData(cds)$Cluster_M3_k16 <- cds@clusters@listData[["UMAP"]][["clusters"]]
+sce$partition <- cds@clusters@listData[["UMAP"]][["partitions"]]
+
+level <- factor(sce$Cluster_M3_k16)
+#num_markers <- 200
+
+# Make pairwise comparisons between genes to identify the most DEGs between clusters, which may serve as markers
+markers <- findMarkers(sce, 
+                       group=level, 
+                       direction="up", #look at only upregulated genes
+                       assay.type="logcounts", #use the non-batch corrected gene expression values
+                       block = sce$SLX, #block any batch effects
+                       full.stats = F
+)
+
+# Save the markers
+saveRDS (markers, file = paste0(dirM, "Cluster_markers.RDS"))
+
+# Save text files of markers for each cluster
+for (i in 1:nlevels(level)){ #repeat for the number of clusters in the sce object
+  marker.set <- markers[[i]] # isolate a single cluster 
+  GO_FDR <- marker.set[marker.set$FDR < 0.0001,] # extract significantly differentially expressed markers 
+  maxFC <- rowMax(as.matrix(GO_FDR[,4:18])) # find the max FC between the cluster of interest and all other clusters
+  GO_FC <- GO_FDR[maxFC > log2(1.25),] # extract only the genes with a FC > 2 between at least 1 other cluster (FC from findMarkers is given in log2)
+  write.table(rownames(GO_FC), file=paste0(dirM, levels(level)[i], "-", nrow(GO_FC)," genes.txt"), sep="\t", quote=FALSE, col.names=FALSE, row.names = FALSE) # write just the genes (to upload to PANTHER GO)
+  write.csv(GO_FC, file=paste0(dirM, levels(level)[i], "-", nrow(GO_FC)," stats.csv"), quote=FALSE, col.names=FALSE, row.names = T) # write the gene lists with statistics
+  
+}
+```
+
+# Assign cell type identity to the clusters
+```{r}
+library(plyr)
+
+# add preliminary cell type labels to each cluster based on their top DEGs, GO terms, and marker gene expression
+#sce$cell_type <- colData(cds)$cell_type <- revalue(sce$Cluster_M3_k16, c("1"="MCd", "2"="MG", "3"="MCd", "4"="MG","5"="MG", "6"="DC", "7"="NP","8"="MCd", "9"="MG", "10"="MCd", "11"="MG", "12"="MCd", "13"="MCd","14"= "MCd","15"="DC","16"="MG", "17"="DC","18"="DC", "HC"="MG"))
+
+sce$cell_type <- revalue(sce$Cluster_M3_k16, c("1-MCd"="MCd", "2-MG"="MG", "3-MCd"="MCd", "4-MG"="MG","5-MG"="MG", "6-MCd"="MCd", "7-MG"="MG", "8-MCd"="MCd", "9-MG"="MG", "10-MCd"="MCd", "11-MCd"="MCd", "12-MCd"="MCd","13-MG"="MG", "HC"="MG"))
+```
+# sub-cluster 2-MG cluster
+```{r}
+cds_2MG <- cds[,colData(cds)$Cluster_M3_k16 =="2-MG"]
+cds_2MG <- cluster_cells(cds_2MG, reduction_method = "UMAP", k=5) 
+
+plot_cells(cds_2MG,
+           color_cells_by = "cluster",
+           #gene = c("Ms4a7", "Serpine2", "S100a11"),
+           show_trajectory_graph = F,
+           label_cell_groups=F,
+           label_leaves=F,
+           label_branch_points=F,
+           graph_label_size=2,
+           group_label_size = 3,
+           cell_size = 1)
+
+#subcluster 6 is mixed RFP-YFP+ and Cx3, Ms4a7+ and Serpine2-, thus this subcluster is labelled as MCd
+names <- colnames(cds_2MG[,cds_2MG@clusters@listData[["UMAP"]][["clusters"]] == 6])
+
+colData(cds[,names])$cell_type <- "MCd"
+
+sce$cell_type <- colData(cds)$cell_type
+```
+
+# sub-cluster 7-MG cluster
+```{r}
+cds_7MG <- cds[,colData(cds)$Cluster_M3_k16 =="7-MG"]
+cds_7MG <- cluster_cells(cds_7MG, reduction_method = "UMAP", k=5) 
+
+plot_cells(cds_7MG,
+           color_cells_by = "cluster",
+           #gene = c("Ms4a7", "Serpine2", "S100a11"),
+           show_trajectory_graph = F,
+           label_cell_groups=F,
+           label_leaves=F,
+           label_branch_points=F,
+           graph_label_size=2,
+           group_label_size = 3,
+           cell_size = 1)
+
+#subcluster 4 is mixed RFP-YFP+ and Cx3, Ms4a7+ and Serpine2-, thus this subcluster is labelled as MCd
+names <- colnames(cds_7MG[,cds_7MG@clusters@listData[["UMAP"]][["clusters"]] == 3])
+
+colData(cds[,names])$cell_type <- "MCd"
+
+sce$cell_type <- colData(cds)$cell_type
+```
+
+
+# Store the clusters in the sce and cds column data
+```{r}
+library(plyr)
+
+# subset the sce object with the Monocle3 derived clusters, for visualization purposes
+sce$Cluster_M3_k16 <- colData(cds)$Cluster_M3_k16 <- cds@clusters@listData[["UMAP"]][["clusters"]]
+
+# rename the clusters based on majority cell type composition
+sce$Cluster_M3_k16 <- colData(cds)$Cluster_M3_k16 <- revalue(sce$Cluster_M3, c("1"="1-MCd", "2"="2-MG", "3"="3-MCd", "4"="4-MG","5"="5-MG", "6"="DC", "7"="NP","8"="6-MCd", "9"="7-MG", "10"="8-MCd", "11"="9-MG", "12"="10-MCd", "13"="11-MCd","14"= "12-MCd","15"="DC","16"="13-MG", "17"="DC","18"="DC"))
+
+# order the clusters by majority timepoint and add the HC as a factor level
+sce$Cluster_M3_k16 <- colData(cds)$Cluster_M3_k16 <- factor(sce$Cluster_M3_k16, levels = c("HC", "7-MG", "4-MG", "9-MG", "13-MG", "2-MG", "5-MG", "1-MCd", "8-MCd", "6-MCd", "12-MCd", "10-MCd", "3-MCd", "11-MCd", "DC", "NP"))
+
+# rename the clusters based on majority cell type composition and majority timepoint
+sce$Clust_final_names <- colData(cds)$Clust_final_names <- revalue(sce$Cluster_M3_k16, c("1-MCd"="MCd(B1)", "8-MCd"="MCd(A1)",  "6-MCd"="MCd(B2)","10-MCd"="MCd(B3)", "12-MCd"="MCd(C)","11-MCd"="MCd(A3)","3-MCd"="MCd(A2)", "2-MG"="MG(A2)","4-MG"="MG(B1)","5-MG"="MG(A3)", "7-MG"="MG(A1)", "9-MG"="MG(B2)", "13-MG"="MG(B3)", "DC", "NP"))
+
+sce$Clust_final_names <-colData(cds)$Clust_final_names <- factor(sce$Clust_final_names, levels = c("HC", "MG(A1)", "MG(A2)", "MG(A3)", "MG(B1)", "MG(B2)", "MG(B3)",  "MCd(A1)", "MCd(A2)", "MCd(A3)", "MCd(B1)", "MCd(B2)", "MCd(B3)", "MCd(C)", "DC", "NP"))
+
+# identify the HC
+sce$Cluster_M3_k16[sce$stage == "HC"] <- colData(cds)$Cluster_M3_k16[colData(cds)$stage == "HC"] <- "HC"
+```
+
+# Save the cds and sce objects
+```{r}
+saveRDS(cds, "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/cds_k16_n15.RDS")
+saveRDS(sce, "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+```
+

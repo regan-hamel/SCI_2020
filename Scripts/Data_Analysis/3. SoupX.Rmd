@@ -1,0 +1,113 @@
+---
+title: "SoupX"
+author: "Regan"
+date: "21/01/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Based on SoupX
+https://cdn.rawgit.com/constantAmateur/SoupX/master/doc/pbmcTutorial.html
+
+This script will estimate and remove the UMI counts corresponding to the free-floating mRNA background.
+
+Notes:
+- this needs to be done by sample, as you would have a unique "soup" for each one
+
+
+# Import the Single Cell Experiments for each sample
+```{r}
+library(DropletUtils)
+
+#loads the quickA fxn, which takes in a sce from an EmptyDrops folder and a perplexity (optional), and outputs a log10-transformed sce with reduced dimensions for visual comparison with the post-SoupX results 
+source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Sources/Fxn - Quick Analysis.R") 
+
+#initialise directories (dir), the sample metadata, and the number of samples (n)
+source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Sources/SLX-18271.R")
+
+for (i in 1:n) {
+  sceL <- eval(parse(text=paste('sce',i,sep='')))
+  dirNN <- (paste0(dir, sceL[length(sceL)], "/", sceL[1],"/EmptyDrops/")) 
+  SCE <- read10xCounts(dirNN, col.names = TRUE)
+  assign(paste('SCE',i,sep=''), SCE)
+  
+  rm (SCE)
+}
+```
+
+# Picking soup-specific genes
+- we need to estimate the quantity of contaminating "soup" counts in each droplet
+- we must identify a set of genes that will not be (biologically) expressed in each cell
+- since we are using tissue, we can try using haemoglobin genes which will be a ubiquitous contaminant in the dataset
+- we can use this list of *correlated* genes to predict which cells are not genuinely expressing these sets of genes, then we can use those cells to estimate the level of ambient RNA contamination.
+```{r}
+Hb <- c("Hba-a1", "Hba-a2", "Hbb-bt", "Hbb-y", "Hbb-bh1","Hbb-bh2") #haemoglobin genes
+Olig =c("Mbp", "Olig1", "Olig2", "Mog", "Plp1") #oligodendrocyte genes
+Astro = c("Aldh1l1", "Gfap", "Aqp4") #astrocyte genes
+
+All.genes <- c(Hb, Olig, Astro)
+nonExpressedGeneList <- list(Hb=Hb, Olig=Olig, Astro=Astro)
+```
+
+# Estimate the profile of the background mRNA
+```{r}
+library(SoupX)
+library(org.Mm.eg.db)
+
+for (i in 1:n) {
+  sce <- eval(parse(text=paste0('SCE',i))) #initialis sce as the SingleCellExperiment object
+  sceL <- eval(parse(text=paste0('sce',i))) #initialise the sample metadata
+  dir0 <- paste0(dir,sceL[length(sceL)], "/", sceL[1], "/") #set the directory
+  sc = load10X(dataDir = dir0, keepDroplets = TRUE, cellIDs = colnames(sce)) #this directory needs to contain both the raw and post-Empty Drops Data
+  
+  # Estimate the profile of the "Soup"
+  sc = estimateSoup(sc)
+  
+  # Identify and exclude the cell genuinely expressing haemoglobin, astrocyte, or neuron genes and which should not be used to estimate the background mRNA levels 
+  # In the case of myeloid cells, this may also include phagocytic debris
+  useToEst <- estimateNonExpressingCells(sc, nonExpressedGeneList = nonExpressedGeneList) #gene list set in the previous chunk
+  
+  #calculate the estimated contamination fraction
+  sc <- calculateContaminationFraction(sc, nonExpressedGeneList= list(Hb = Hb, Olig = Olig, Astro=Astro), useToEst = useToEst)
+  
+  #remove the contamination from the count matrix
+  out <- adjustCounts(sc, roundToInt=TRUE) #set round to interger = TRUE bc we are using count-based analyses downstream
+  
+  # Write these new counts to the respective CellRanger file
+  DropletUtils:::write10xCounts(paste0(dir0,"SoupFreeCounts"), out)
+  
+  # Take a look at the genes that were set to 0 after correction and record these details in a text file
+  library(Matrix)
+  cntSoggy <- rowSums(sc$toc > 0) #the counts before filtering
+  cntStrained <- rowSums(out > 0) #the counts after filtering
+  mostZeroed <- tail(sort((cntSoggy - cntStrained)/cntSoggy), n = 20) 
+  
+  mylist <- (list("Percent_Removed:", sc$metaData[["rho"]][1]*100, "Genes_Used:", nonExpressedGeneList, "Sample:", "Most Zeroed Genes", mostZeroed, sce$Sample[1]))
+  
+  fileConn <- file(paste0(dir0,"SoupFreeCounts/Soup Details.txt"))
+  writeLines(as.character(mylist), fileConn)
+  close(fileConn)
+  
+  # Visualize the sample (tSNE) before ana after SoupX
+  sce.X <- read10xCounts(paste0(dir0,"SoupFreeCounts"), col.names = TRUE) # Initialise the post-SoupX counts as a sce 
+  sce.X <- quickA(sce.X) # Quickly process the sample post-SoupX for tSNE visualization (no QC)
+  sce <- quickA(sce) # Quickly process the sample pre-SoupX for tSNE visualization (no QC)
+  
+  set.seed(1000)
+  
+  pdf(file = paste0(dir0,"SoupFreeCounts/tSNE Comparisons.pdf"))
+  col <- "Cluster"
+  a <- plotTSNE(sce, col=col) +  ggtitle("Before SoupX")
+  b <- plotTSNE(sce.X, col=col)+  ggtitle("After SoupX")
+  multiplot(a,b)
+  
+  # Visualize and record the ratio of gene counts to expected background-soup value
+  DR <- as.data.frame(reducedDim(sce, "TSNE"))
+  plotMarkerMap(sc, geneSet = All.genes, DR = DR, useToEst = as.logical(rowSums(useToEst)))
+  
+  dev.off()
+}
+```

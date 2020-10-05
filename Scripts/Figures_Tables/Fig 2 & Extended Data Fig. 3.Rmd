@@ -1,0 +1,282 @@
+---
+title: "Figure 2 + S. Figure 3"
+author: "Regan"
+date: "16/05/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+This script will generate the scRNA-seq data figures in figure 2 and extended data figure 3 from the dataset that has been pre-processed with scripts 1-6.
+
+Load the sce
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+```
+
+# Fig 2a, MG downregulate canonical marker genes. Seurat dot plot
+```{r}
+library(Seurat)
+library(ggplot2)
+
+
+# extract the MG and convert the sce to a Seurat object
+seur <- as.Seurat(sce[,sce$cell_type == "MG"], data="logcounts", assay="logcounts")
+
+MG_genes <- c("Olfml3","Sparc", "Trem2", "C1qa", "C1qb",  "Ctss","Csf1r", "Hexb","Gpr34", "P2ry12","Plxdc2", "Sall1", "Siglech","Cx3cr1","Tmem119","Serpine2")
+
+DotPlot(seur,
+        features=MG_genes,
+        group.by = "stage",
+        cols = "RdBu",
+        scale =F,
+        assay="logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+ggsave("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 2a - MG markers.pdf", width = 8, height = 2.5)
+```
+
+
+# Fig 2b, UMAP displaying Apoe vs Trem2 expression
+- using Seurat to plot the expression of two genes one one UMAP
+
+Load the sce
+```{r}
+rm(list=ls())
+sce_u <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 2b "
+```
+
+Plot the UMAP
+```{r}
+library(Seurat)
+# convert the sce to a seurat object
+seur <- as.Seurat(sce_u)
+
+# select the genes to plot
+x <- "Apoe"
+y <- "Trem2"
+
+# generate the UMAPs
+list <- FeaturePlot(object=seur,
+                    features=c(x, y), 
+                    cols=c("grey60", "purple", "green"), 
+                    reduction="UMAP",
+                    blend=TRUE,
+                    combine=F,
+                    blend.threshold=0,
+                    pt.size=1)
+
+
+# convert the UMAP dots to a single image (easier handling in Illustrator)
+AugmentPlot(plot=list[[3]] + NoLegend() + labs(title=NULL))  
+
+ggsave(paste0(dirU,  x, " vs ", y, " .pdf"), scale=0.75, width=7, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+
+# plot and save the legend
+list[[4]]+NoLegend()
+ggsave(paste0(dirU, x, " vs ", y, " r-b legend.pdf"), scale=0.75, width=8, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+```
+
+# Fig 2c, d and S.Fig 3 Boxplots of genes of interest across SCI timepoints
+
+Load the sce and directory
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+sce$cell_type <- factor(sce$cell_type)
+
+dirB <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/S. Fig2/"
+```
+
+Set the gene lists of interest
+```{r}
+MG <- c("P2ry12","Plxdc2", "Sall1", "Siglech", "Sparc","Serpine2")
+names(MG) <- "MG"
+
+MG_MCd <- c("Tmem119", "Gpr34", "Olfml3")
+names(MG_MCd) <- "MG_MCd"
+
+Myel <- c("Aif1", "Hexb", "Fcrls","C1qa", "Trem2")
+names(Myel) <- "Myel"
+
+YFP <- c("S100a11", "Ms4a7", "Chil3", "Mgst1", "Ccl7", "Arg1")
+names(YFP) <- "Infiltrating"
+
+Fig2 <- c("Apoe", "Tyrobp")
+names(Fig2) <- "Fig2"
+```
+
+Generate the boxplots for the genes of interest (Welch t-Test)
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(ggpubr)
+# set the genes of interest
+genes <- Fig2
+
+x <- sce$stage
+col <- sce$cell_type
+
+for (i in genes) {
+  
+  logs <- as.numeric(logcounts(sce[i]))
+  df <- data.frame(Logs=logs, x=x, colour=col)
+  
+  #add empty slots for HC to keep the spacing
+  df.a <- data.frame(Logs=c(0,0,0, 0, 0), x=c("HC", "HC", "HC", "10", "21"), colour=c("MCd", "DC", "NP", "NP", "NP"))
+  df <- rbind(df, df.a)
+  comparisons = list(c("HC", "1"), c("HC", "2"), c("HC", "3"), c("HC", "10"), c("HC", "21"))
+  
+  if (names(genes) == "MG" | names(genes) == "MG_MCd") {
+    sym <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns"))
+    statP <- stat_compare_means(method = "t.test", comparisons = comparisons, symnum.args = sym)
+  } else { 
+    statP <- NULL
+  }
+  ggplot(data=df, aes(y=Logs, x=x, fill=colour)) + geom_boxplot() + ggtitle(i) + theme(plot.title=element_text(hjust=0.5), legend.position="none") + ylab("Logcounts") + xlab("SCI Stage (days)") + scale_fill_brewer(palette="Accent", direction=1) + statP
+  
+  ggsave(paste0(dirB,"boxplot_", i, ".pdf"), scale=.75, height=5, width =5)
+}
+
+# Statistics for extended data Table 3, complementary to extended data fig 2
+if (names(genes) == "MG" | names(genes) == "MG_MCd" | names(genes) == "Myel") {
+  # Perform pairwiseTTests and multiple testing correction via Benjamini-Hochberg for the genes of interest 
+  # set the cell type
+  sce_CT <- sce[,sce$cell_type == "MG"]
+  
+  # calculate the adjusted pval
+  library(scran)
+  out <- pairwiseTTests(logcounts(sce_CT),
+                        groups=sce_CT$stage,
+                        direction="down")
+  # extract the pairs of interest (ie HC vs each timepoint)
+  pairs <- c(6, 11, 16, 21, 26)
+  
+  # extract just the adjusted p values for each gene 
+  stats <- out$statistics[[6]][genes,]$FDR
+  stats_a <- out$statistics[[6]][genes,]
+  
+  for (i in pairs[-1]) {
+    add <- out$statistics[[i]][genes,]$FDR
+    add_a <- out$statistics[[i]][genes,]
+    
+    stats_a <- cbind(stats_a, add_a)
+    stats <- cbind(stats, add)
+  }
+  colnames(stats) <- out$pairs$first[pairs]
+  rownames(stats) <- genes
+  
+  # save and add to plot in illustrator
+  write.csv(stats, paste0(dirB, "stats", names(genes)[1], " x vs HC.csv"))
+  write.csv(stats_a, paste0(dirB, "stats-all ", names(genes)[1], "  x vs HC.csv"))
+}
+```
+
+
+# Fig 2d boxplot of DAM1 vs DAM2 genes by cell type over time
+
+Load the sce and directory
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+sce$cell_type <- factor(sce$cell_type)
+
+dirB <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 2d/"
+```
+
+Load the function for preparing gene lists from source files
+```{r}
+source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Sources/Fxn - Prep Genes.R")
+```
+
+Establish the DAM gene lists (from Keren-Shaul et al., 2017; Figure 6)
+```{r}
+# DAM phase 1 (Trem independent)
+DAM1 <- c("Tyrobp, Ctsb, Ctsd, Apoe, B2m, Fth1, Lyz2") 
+
+# DAM phase 2 (Trem dependent)
+DAM2 <- c("Trem2, Axl, Cst7, Ctsl, Lpl, Cd9, Csf1, Ccl6, Itgax, Clec7a, Lilrb4a, Timp2")  
+
+# separate the string
+DAM1 <- prepG(DAM1, sep = ", ")
+DAM2 <- prepG(DAM2, sep = ", ")
+```
+
+Calculate the per cell metrics for the DAM genes
+```{r}
+library(scater)
+
+#sce <- calculateQCMetrics(sce, feature_controls=list(DAM1=which(rownames(sce) %in% DAM1), DAM2=which(rownames(sce) %in% DAM2)))
+sce$logMeanDAM2 <- colMeans(logcounts(sce[DAM2]))
+sce$logMeanDAM1 <- colMeans(logcounts(sce[DAM1]))
+```
+
+Generate the boxplots for the genes of interest
+```{r}
+library(RColorBrewer)
+
+# set the x values
+x <- sce$stage
+
+# set the values to colour the plot by
+col <- sce$cell_type 
+
+# set the per cell metric level
+sublevel <- "logMean" #total_features_by_counts_ log10_total_counts_ pct_counts_
+
+# the gene lists names for designating which per cell metrics, and for labelling plots
+names <- c("DAM1", "DAM2")
+
+# generate the plots for each gene list
+for (i in names) {
+  
+  # build the data frame for plotting
+  sl <- paste0(sublevel, i )
+  logs <- colData(sce)[sl][,1]
+  
+  df <- data.frame(Logs=logs, x=x, colour=col)
+  
+  # add empty slots for HC to keep the spacing
+  df.a <- data.frame(Logs=c(0,0,0, 0), x=c("HC", "HC", "HC", "10"), colour=c("MCd", "DC", "NP", "NP"))
+  df <- rbind(df, df.a)
+  
+  # plot
+  ggplot(data=df, aes(y=Logs, x=x, fill=colour)) + geom_boxplot() + ggtitle(i) + theme(plot.title=element_text(hjust=0.5), legend.position="none") + ylab(sl) + xlab("Day Post-SCI") + scale_fill_brewer(palette="Accent", direction=1) + ggtitle(i)
+  
+  # save
+  ggsave(paste0(dirB,"boxplot-", i, sublevel, "MG FIG6 list by clust.pdf"), scale=.75, height=5, width=5)
+}
+```
+
+# Statistics for Extended Data Table 2, complementary to fig 2d
+```{r}
+genes <- DAM2
+
+# select only the subacute and chronic cells
+sce_CT <- sce[,sce$stage == "10" | sce$stage == "21"]
+
+# calculate the adjusted pval
+library(scran)
+out <- pairwiseTTests(logcounts(sce_CT),
+                      groups=sce_CT$cell_type,
+                      direction="up")
+
+# extract the genes and comparison (1=MG vs MCd) of interest
+stats_a <- as.matrix(out$statistics[[1]][genes,])
+
+# extract just the adjusted p values for each gene 
+stats <- as.matrix(out$statistics[[1]][genes,]$FDR)
+
+colnames(stats) <- out$pairs$first[1]
+rownames(stats) <- rownames(stats_a) <- genes
+
+
+# save and add to plot in illustrator
+write.csv(stats, paste0(dirB, "stats D10-21 MG vs MCd DAM2.csv"))
+write.csv(stats_a, paste0(dirB, "stats-all D10-21 MG vs MCd DAM2.csv"))
+```
+
+

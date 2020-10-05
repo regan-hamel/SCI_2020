@@ -1,0 +1,161 @@
+---
+title: "Quality Control"
+author: "Regan"
+date: "20/01/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Based on:
+https://github.com/MarioniLab/compareSingleCell/blob/master/vignettes/embryo_preprocess.Rmd
+
+This script labels samples with metadata (condition, sex, etc.) and performs the first pass removal of low-quality cells for each sample.
+
+# Import the Single Cell Experiments for each sample and set the parameters 
+```{r}
+#initialise directories (dir), the sample metadata, and the number of samples (n)
+source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Sources/All.R")
+
+#create a SingleCellExperiment object from the cleaned gene-count matrices
+for (i in 1:n) {
+  sceL <- eval(parse(text=paste('sce',i,sep='')))
+  dirNN <- (paste0(dir, sceL[length(sceL)], "/", sceL[1],"/EmptyDrops/")) 
+  SCE <- read10xCounts(dirNN, col.names = TRUE)
+  assign(paste('SCE',i,sep=''), SCE)
+  
+  rm (SCE)
+}
+
+# Set the threshold for QC cutoff
+genes <- 600
+UMIs <- 600
+```
+
+
+
+```{r}
+library(scater)
+library(EnsDb.Mmusculus.v79)
+library(org.Mm.eg.db)
+
+for (i in 1:n) {
+  sceL <- eval(parse(text=paste0('sce',i)))
+  sce <- eval(parse(text=paste0('sce.',sceL[1])))
+  dir0 <- paste0(dir,sceL[length(sceL)], "/", sceL[1], "/QC/") #set the directory
+  
+  # Assign each sample its respective metadata
+  
+  # Store sample-specific data in the order the sce objects were merged
+  ncol <- ncol(sce) 
+  for (j in 1:length(sce1)) { #there will always be a sce1 no matter the number of subsets or samples
+    x <- rep(sceL[j], ncol)   
+    assign(paste("x", j, sep =""), x)
+    
+    #clear x
+    rm(x)
+  }
+  rm(ncol)
+  
+  # Subset the sce object to easily track the sample details
+  sce$sampleID <- x1
+  sce$timepoint <- x2 #HCs included
+  sce$condition <- x3 #HC vs SCI
+  sce$batch.day <- x4 #date collected
+  sce$fl <- x5  #track the fluorophore (YFP vs RFP)
+  sce$strain <- x6 #track the strain
+  sce$sex <- x7 #track the sex
+  sce$stage <- x8 #the timepoint collected post-SCI
+  sce$SLX <- x9 #flow cell lane
+  
+  # order the stage chronologically
+  sce$stage <- factor(sce$stage, levels = c("HC", "1", "2", "3", "10", "21"))
+
+  # Identify mitochondrial genes & label the rownames with gene symbols
+  rowData(sce)$ENSEMBL <- mapIds(org.Mm.eg.db, keytype="SYMBOL", 
+                                 keys=rownames(sce), column="ENSEMBL")   
+  rowData(sce)$SYMBOL <- rownames(sce)
+  rownames(sce) <- uniquifyFeatureNames(rownames(sce), rowData(sce)$SYMBOL)
+  
+  #Identify the chromosomal location for each gene. Ribo and mito location is used for downstream QC"
+  location <- mapIds(EnsDb.Mmusculus.v79, keys=rowData(sce)$ID, 
+                     column="SEQNAME", keytype="GENEID")
+  rowData(sce)$CHR <- location
+  summary(location=="MT")
+  
+  #calculate QC metrics
+  sce <- calculateQCMetrics(sce, feature_controls=list(Mito=which(rowData(sce)$CHR =="MT"))) 
+  
+  # Examine the QC metrics before removing any cells
+  stage = "PreQC" #specify the stage for the plotting function
+  source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Sources/Fxn - qcPlots.R", echo = TRUE) # This source script plots and saves several QC metric graphs
+  
+  
+  # Remove cells for QC based on the threshold set in the loading chunk
+  cells.before <- ncol(sce)   #record the number of cells pre-QC
+  by.Genes <- sce$total_features_by_counts > genes
+  by.UMI <- sce$total_counts > UMIs
+  gene.UMI.keep <- by.Genes & by.UMI 
+  sce <- sce[,gene.UMI.keep] #remove cells that do not pass the threshold
+  
+  #remove Y, Xist and Tsix genes
+  loc <-  mapIds(EnsDb.Mmusculus.v79, keys=rowData(sce)$ID, 
+                 column="SEQNAME", keytype="GENEID") #identify the sex genes
+  is.y <- loc=="Y" & !is.na(loc) 
+  sce <- sce[!is.y,] #remove the Y chromosome genes
+  sex.gene <- c("Xist", "Tsix")
+  sex.gene <- match(rownames(sce), sex.gene)
+  sce <- sce[is.na(sex.gene)] #remove the Xist and Tsix genes
+  
+  # Examine the QC metrics after removing low quality cells
+  stage = "PostQC" #specify the stage for the plotting function
+  source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Sources/Fxn - qcPlots.R", echo = TRUE)
+  
+  # Record the number of cells and genes dropped by sample
+  df <- data.frame(
+    ByGene=sum(!by.Genes),
+    ByUMI=sum(!by.UMI),
+    Remaining=ncol(sce),
+    Post_Empty_Drops=cells.before,
+    Sex_Removed=remove.sex,
+    GeneCutoff=genes,
+    UMICutff = UMIs
+  )
+  write.csv(df, file = paste0(dir0, "Cells and Genes Removed for QC.csv"))
+  
+  # Examine the most highly expressed genes, this should be dominated by ribosomal and housekeeping genes
+  plotHighestExprs(sce)
+  ggsave(filename = paste0("Highest Expressed Genes.pdf"), plot = last_plot(), device = NULL, path = dir0, scale = 1, width = NA, height = NA, units = c("in", "cm", "mm"), dpi = 300, limitsize = TRUE)
+  
+  # Compute size factors for normalization downstream
+  clusters <- quickCluster(sce, use.ranks=FALSE, method = "igraph", min.size = 100) #must set min.size, otherwise it takes forever
+  sce <- computeSumFactors(sce, min.mean=0.1, cluster=clusters, BPPARAM=SerialParam()) 
+  
+  # Visualize the size factors vs the library size to see if they are well correlated 
+  pdf(paste0(dir0, "Size factors vs UMI counts.pdf"))
+  plot(sizeFactors(sce), sce$total_counts, log="xy", ylab ="UMI Counts Per Cell", xlab = "Size Factor")
+  dev.off()
+  
+  # Save the updated sce for each sample for downstream analysis
+  saveRDS(sce, paste0(dir, "sce.RDS")) 
+  
+  # Save the post-QC sce for combining samples in the next step
+  assign(paste0("sce_", sceL[1]), sce)
+}
+```
+
+# Combine all samples
+```{r}
+# Assign the first sce to initialise the object
+sce_all <- eval(parse(text=paste0('sce.',sce1[1])))
+
+for (i in 2:n) { 
+  sceL <- eval(parse(text=paste0('sce',i)))
+  sce <- eval(parse(text=paste0('sce_',sceL[1])))
+  sce_all <- cbind(sce_all, sce)
+}
+saveRDS(sce_all, file = paste0(dir, "All/sce.RDS"))
+```
+

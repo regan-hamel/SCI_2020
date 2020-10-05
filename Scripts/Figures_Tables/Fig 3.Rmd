@@ -1,0 +1,234 @@
+---
+title: "Figure 3"
+author: "Regan"
+date: "16/05/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+This script will generate the scRNA-seq data figures in figure 3 from the dataset that has been pre-processed with scripts 1-6.
+
+# Fig 3a UMAP of Monocle3-derived clusters and trajectory 
+
+Load the cds and set the directory
+```{r}
+rm(list=ls())
+cds <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/cds_k16_n15.RDS")
+sce_u <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/"
+```
+
+Plot the UMAP using Monocle 3 to visualize MG and MCd clusters and trajectories (generated in script 6) 
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(scater)
+library(Seurat)
+
+# remove all cells from cds
+cdsC <- cds[,0]
+
+# plot the trajectory
+plot_cells(cdsC,   
+           show_trajectory_graph=T,
+           reduction_method="UMAP",
+           label_cell_groups=F,
+           label_leaves=F,
+           label_branch_points=F,
+           graph_label_size=1,
+           cell_size =0.3) #+ s
+
+# save and size
+ggsave(paste0(dirU, "Fig 3a trajectory.pdf"), scale=0.5, width=13, height=9)
+
+# remove neutrophils from sce
+sceC <- sce_u[,sce_u$cell_type != "NP"]
+
+#generate the UMAP and implement the timepoint palette
+c.by <- "Clust_final_names"
+p <- plotUMAP(sceC, colour_by=c.by, point_size=0) + scale_fill_manual(values=c("lightblue", brewer.pal(11,"RdYlGn"),"#003319","black", "grey50", "grey90", "black"))+ geom_point(aes(fill=colData(sceC)[c.by][,1]), pch=21, stroke = .0, alpha = 0.6, size=2) 
+
+# convert the UMAP dots to a single image (easier handling in Illustrator)
+AugmentPlot(plot=p, dpi=600)
+
+ggsave(paste0(dirU, "Fig 3a UMAP.pdf"), scale=0.5, width=13, height=9)
+```
+
+# Fig 3b UMAP coloured by timepoint
+
+Load the sce
+```{r}
+rm(list=ls())
+sce_u <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+```
+
+Set the colour palette (red to purple) for data related to timepoints post-SCI
+```{r}
+temp <- c("#D53E4F", "#FF8D59","#E6F598","#1A9850","#3288BD", "#542788")
+```
+
+Plot the UMAP using the subset of interest
+```{r}
+library(scater)
+library(ggplot2)
+library(Seurat)
+
+#set the parameters
+c.by <- "stage" 
+path <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/"
+
+# remove the neutrophils from the UMAP
+NP <- sce_u@int_colData@listData[["reducedDims"]]@listData[["UMAP"]][,1] < -5
+sce_u <- sce_u[,!NP]
+
+#generate the UMAP and implement the timepoint palette
+p <- plotUMAP(sce_u, colour_by=c.by, point_size=0) + scale_fill_manual(values=temp) + geom_point(aes(fill=colData(sce_u)[c.by][,1]), pch=21, stroke = .0, alpha = 0.6, size=2) 
+
+# convert the UMAP dots to a single image (easier handling in Illustrator)
+AugmentPlot(plot=p, dpi=600)  
+
+#save the UMAP and alter the image dimensions as needed
+ggsave(filename=paste0("Fig 3b-", c.by, ".pdf"), path=path, scale=0.7, width=7, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE) 
+
+#plot a larger legend 
+sce_l <- sce_u[,sce_u$cell_type == "DC"]
+plotUMAP(sce_l, colour_by=c.by, point_size=0) + scale_fill_manual(values=temp, drop =F) + geom_point(aes(fill=colData(sce_l)[c.by][,1]), pch=21, stroke = .0, alpha = 1, size=3)   
+
+ggsave(filename=paste0("Fig 3b-",c.by, "legend.pdf"), path=path, scale=0.7, width=7, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE) 
+```
+
+# Figure Extended Data 6 temporal colour bar for myeloid cell map
+
+Set the colour palette
+```{r}
+rm(list=ls())
+temp <- c("#D53E4F", "#FF8D59", "#FEE0b6","#E6F598","#99D594", "#1A9850","#5AB4AC","#3288BD","#998EC3", "#542788")
+```
+
+Plot the spectral colour bar
+```{r}
+i <- 2*(0:10)
+
+pdf("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 6 colour_bar.pdf")
+plot(c(200, 250), c(300, 450), type="n")
+rect(240-i, 320, 250-i, 350, col=temp, border=NA)
+dev.off()
+```
+
+# Figure 3c UMAP displaying Fabp5 vs Csf1r
+- using Seurat to plot the expression of two genes on one UMAP
+
+Load the sce and set the directory
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+# remove neutrophils
+NP <- sce@int_colData@listData[["reducedDims"]]@listData[["UMAP"]][,1] < -5
+sce_u <- sce[, !NP]
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 3c - "
+```
+
+Plot the UMAP
+```{r}
+library(Seurat)
+library(ggplot2)
+
+# convert the sce to a seurat object
+seur <- as.Seurat(sce_u, data = "logcounts", assay="logcounts")
+
+# select the genes to plot
+x <- "Csf1r" #Csf1r #Trem2
+y <- "Fabp5"
+
+# generate the UMAPs
+list <- FeaturePlot(object=seur,
+                    features=c(x, y), 
+                    cols=c("grey60", "purple", "green"), 
+                    reduction="UMAP",
+                    blend=TRUE,
+                    combine=F,
+                    blend.threshold=0,
+                    pt.size=1)
+
+# convert the UMAP dots to a single image (easier handling in Illustrator)
+AugmentPlot(plot=list[[3]]+NoLegend() + labs(title=NULL), dpi=600)  
+
+# plot and save the UMAP without a legend (to be plotted separtely)
+ggsave(paste0(dirU, x, " vs ", y, ".pdf"), scale=0.75, width=7, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+
+# plot and save the legend
+list[[4]]+NoLegend()
+ggsave(paste0(dirU, x, "vs", y, "legend.pdf"), scale=0.75, width=8, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+```
+
+# Figure 3f UMAP of MG and MCd displaying the cell type and trajectory, plus inserts showing gene expression, timepoint, and fate-mapping labels
+- using Monocle3
+
+Load the cds and set the directory
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 3f/"
+```
+
+Set the colour palette (red to purple) for data related to timepoints post-SCI
+```{r}
+temp <- c("#D53E4F", "#FF8D59","#E6F598","#1A9850","#3288BD", "#542788")
+
+colData(cds)$stage <- factor(colData(cds)$stage,levels = c("HC", "1", "2", "3", "10", "21"))
+```
+
+Plot the UMAP using Monocle3 to visualize MG and MCd by column data and trajectories (generated in script 6) 
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(scater)
+library(Seurat)
+
+# choose the column data to colour by
+colour <- "stage" #stage #fl #cell_type
+
+if (colour == "stage") {
+  col <- scale_fill_manual(values=temp)
+} else if (colour == "cell_type") {
+  col <- scale_fill_manual(values=brewer.pal(4,"Accent"))
+} else { col <- NULL }
+
+# plot the UMAP
+p <- plotUMAP(sce, colour_by=colour, point_size=0)+ col + geom_point(aes(fill=colData(sce)[colour][,1]), pch=21, stroke = .0, alpha = 0.6, size=2)
+
+# convert the UMAP dots to a single image (easier handling in Illustrator)
+AugmentPlot(plot=p, dpi=600)  
+
+# save and size
+ggsave(paste0(dirU, colour, ".pdf"), scale=0.5, width=10, height=12)
+```
+
+Plot the UMAP using Monocle3 to visualize MG and MCd gene expression (Serpine2 and Ms4a7)
+```{r}
+library(monocle3)
+
+# set the gene of interest
+g <- "Ms4a7" #Serpine2 
+
+# plot the UMAP
+plot_cells(cds, 
+           label_groups_by_cluster=F, 
+           genes=g, 
+           show_trajectory_graph=F, 
+           label_cell_groups=F,
+           label_leaves=F, 
+           label_branch_points=F, 
+           norm="log", 
+           cell_size=0.3)
+
+# save and size
+ggsave(paste0(dirU, paste0(g,".png")), scale=0.5, width=10, height=8, dpi=600)
+```

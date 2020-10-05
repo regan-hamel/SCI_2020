@@ -1,0 +1,40 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+sce_all <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+```
+
+# for all
+```{r}
+sce <- sce_all
+# write downloadM
+write10xCounts(x=counts(sce), path="/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Shiny App/Count Matrix/", genome="mm10")
+
+# write downloadM
+list <- list(SampleID=sce$sampleID, Cell_Type=sce$Cell_Type, Cell_Type_by_Stage=sce$Cell_Type_by_Stage, Stage=sce$SCI_Stage,
+             SLX=sce$SLX, Fate_Map=sce$Fate_Map, Cluster=sce$Cluster, Sex=sce$Sex)
+write.csv(list, "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Shiny App/Annotation.csv")
+```
+
+# by cell type
+```{r}
+library(DropletUtils)
+CT = "DC"
+sce <- sce_all[,sce_all$Cell_Type == CT]
+
+# write downloadM
+write10xCounts(x=counts(sce), path=paste0("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Shiny App/Data/Count Matrix ", CT, "/"), genome="mm10")
+
+# write downloadM
+list <- list(SampleID=sce$sampleID, Cell_Type=sce$Cell_Type, Cell_Type_by_Stage=sce$Cell_Type_by_Stage, Stage=sce$SCI_Stage,
+             SLX=sce$SLX, Fate_Map=sce$Fate_Map, Cluster=sce$Cluster, Sex=sce$Sex)
+write.csv(list, paste0("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Shiny App/Data/Annotation ", CT, ".csv"))
+```
+

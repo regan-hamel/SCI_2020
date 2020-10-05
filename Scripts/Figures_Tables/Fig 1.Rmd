@@ -1,0 +1,254 @@
+---
+title: "Figure 1"
+author: "Regan"
+date: "16/05/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+This script will generate the scRNA-seq data figures in figure 1 from the dataset that has been pre-processed with scripts 1-6.
+
+
+# Fig 1b,c - UMAPs of the dataset separated by strain and fate mapping, coloured by the day collected post-SCI.
+
+Load the sce, directory, and temporal colour palette
+```{r}
+sce_all <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 1b/"
+
+# Set the colour palette (red to purple) for data related to timepoints post-SCI
+temp <- c("#D53E4F", "#FF8D59","#E6F598","#1A9850","#3288BD", "#542788")
+```
+
+Plot the UMAP using the mouse strain/fluorophore of interest and grey out the cells not of interest
+```{r}
+library(scater)
+library(RColorBrewer)
+library(Seurat)
+sce <- sce_all
+
+# name for labelling the UMAP
+name <- "grey by fl"
+
+# choose how to colour and shape the UMAP
+colours <- c(temp,"grey95")
+
+# choose the level to determine the grey
+subset <- "fl"
+
+# choose the level to colour the non-grey cells
+col.name <- "stage"
+
+# automatically set parameters
+level <- colData(sce)[subset][,1]
+
+# load the sce and generate the UMAP for each timepoint
+for (j in levels(level)) {
+  sce <- sce_all
+  
+  #set the colour category for the grey
+  grey <- level != j
+  
+  # rename levels to include "grey" for those not of interest
+  col <- colData(sce)[col.name][,1] # set the level to colour the non-grey cells
+  sce$grey <- factor(col, levels=c(levels(col), "grey"))
+  sce$grey[grey] <- "grey"
+  
+  #sort the cells in order to have the grey cells last (and therefore underneath)
+  sce <- sce[,rev(order(colnames(sce)[sce$grey]))]
+  
+  # generate the UMAP for the timepoint
+  p <- plotUMAP(sce, colour_by="grey",by_exprs_values="logcounts", point_size = 1) +  ggtitle(paste0(j))  + theme(plot.title=element_text(size=rel(2)))   + geom_point(aes(fill=colData(sce)$grey), colour="grey95", pch=21, stroke = .1, size =1.5, alpha = 0.6) + scale_fill_manual(values=colours, drop=F)+ theme(legend.position="none")
+  
+  # convert the UMAP dots to a single image (easier handling in Illustrator)
+  p <- AugmentPlot(plot=p, dpi=600)  
+  
+  # name and save the plot to combine with the other timepoints  
+  ggsave(p, filename=paste0(name," ", j, ".pdf"), path=dirU, scale=0.7, width=3.5, height=4, dpi=300, limitsize=TRUE) 
+}
+
+# combine the UMAPs from all timepoints and save
+
+```
+
+# Fig 1d Cell Type Markers
+
+Load the sce and directory
+```{r}
+rm(list=ls())
+
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dirT <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 1d/"
+```
+
+Define the cell type markers
+```{r}
+MG <-c("Serpine2", "P2ry12", "Siglech", "Slc2a5", "Plxdc2", "Sall1", "Sparc")
+NP <- c("S100a8", "S100a9", "Lcn2", "Dedd2", "Ly6g")
+MC <- c("Ccl7", "Ecm1", "Mgst1", "Arg1", "Ms4a7")
+DC <- c("Cd74", "H2-Eb1", "H2-Aa", "Flt3", "Zbtb46" )
+
+CT <- list(MG=MG, NP=NP, MC=MC, DC=DC)
+```
+
+Colour the UMAP by marker genes
+```{r}
+library(scater)
+set.seed(100)
+
+# choose how to colour and shape the tSNE
+c.by <- "logMean"
+s.by <- NULL 
+exp <- "logcounts"
+
+x <- 0
+for (i in CT) {
+  x <- x+1
+  # set the cell type
+  names <- names(CT)[x]
+  genes <- i
+  
+  # combine the genes into a single string for labelling the plot
+  g_names <- NULL
+  for(j in genes){
+    g_names <- paste(g_names, j)
+  }
+  
+  # calculate the mean expression value (from log-transformed counts) for the genes of interest
+  sce$logMean <- colMeans(logcounts(sce[genes,]))
+  
+  # plot the UMAP
+  p <- plotUMAP(sce, colour_by=c.by, shape_by=s.by, by_exprs_values=exp) +  ggtitle(paste0(g_names," P=", metadata(sce)$perplexity)) 
+  
+  # convert the UMAP dots to a single image (easier handling in Illustrator)
+  p <- AugmentPlot(plot=p, dpi=600)  
+  
+  #save the UMAP and adjust the size as needed
+  ggsave(p, filename=paste0("Unique DEGs logMean -", names, ".pdf"), path=dirT, scale=1, width=9, height=9, dpi=300, limitsize=TRUE) 
+}
+
+```
+
+# Fig 1e (left) Area composition plot, cell type vs timepoint
+- using the Cx3 mouse only, because it is an unbiased sampling of Cx3cr1+ cells compared to the Cremato, which enriches for either infiltrating or resident Cx3cr1+ cells
+
+Load the sce
+```{r}
+rm(list=ls())
+sce_all <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+#examine only Cx3cr1 mice
+sce_comp <- sce_all[, sce_all$fl == "Cx3"]
+
+#reorder the cell types for aesthetics 
+sce_comp$cell_type <- factor(sce_comp$cell_type, levels=c("NP","DC","MCd","MG"))
+```
+
+Generate the area plot (using sce_comp)
+```{r}
+library(tibble)
+library(ggplot2)
+library(plyr)
+
+
+# set HC to 0
+sce_comp$stage <- factor(sce_comp$stage, levels = c("HC","0", "1", "2", "3", "10", "21"))
+sce_comp$stage[sce_comp$stage == "HC"] <- 0
+
+# set the x and y values for the plot
+y <- sce_comp$cell_type
+x <- droplevels(factor(sce_comp$stage))
+
+# create the df containing the x and y values
+df <- as.data.frame(table(y, x))
+colnames(df) <- c("y", "x", "Freq")
+
+# create data
+time <- as.numeric(levels(df$x)[df$x]) # x Axis
+value <- as.numeric(df$Freq)             # y Axis
+group <- df$y       # group, one shape per group
+data <- data.frame(time, value, group)
+
+
+# plot
+# Compute percentages with dplyr
+library(dplyr)
+data <- data  %>%
+  group_by(time, group) %>%
+  summarise(n = sum(value)) %>%
+  mutate(percentage = n / sum(n))
+
+# Plot
+# Plot
+ggplot(data, aes(x=time, y=percentage, fill=group)) + 
+  geom_area(alpha=0.7 , size=0.5, colour="black") + ylab("Fraction of Cells Per Cell Type") + scale_x_continuous(name ="Day Post-SCI", breaks=c(0,1,2, 3, 10, 21), labels=c("0"="HC","1"="1","2"="2", "3"="3", "10"="10", "21"="21"))+ scale_fill_brewer(palette="Accent", direction=-1)
+
+
+ggsave("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 1e/Composition Area Plot Cell Type.pdf", height=5, width=4)
+```
+
+# Fig 1e (right) UMAPs by timepoint coloured by cell type
+
+Load the sce and directory
+```{r}
+library(scater)
+
+# load the sce
+sce_all <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+```
+
+Generate UMAPs for each timepoint with greyed out background cells
+```{r}
+library(scater)
+library(RColorBrewer)
+library(Seurat)
+
+# set the days for subsetting the sce
+days <- c("HC","1", "2", "3", "10", "21") 
+
+# choose how to colour and shape the UMAP
+c.by <- "grey"
+s.by <- NULL 
+exp <- "logcounts"
+colours <- c(brewer.pal(nlevels(sce_all$cell_type), "Accent"),"grey95")
+
+# name for labelling the UMAP
+name <- c.by
+
+# load the sce and generate the UMAP for each timepoint
+for (j in days) {
+  sce <- sce_all
+  #set the colour category for the UMAP
+  col.name <- "cell_type"
+  col <- sce$cell_type #sce$cells.condition 
+  
+  #set the colour category for the grey
+  category <- j
+  subset <- sce$stage
+  grey <- subset != category
+  
+  # rename levels to include "grey" for those not of interest
+  sce$grey <- factor(col, levels=c( levels(col), "grey"))
+  sce$grey[grey] <- "grey"
+  
+  #sort the cells in order to have the grey cells last (and therefore underneath)
+  sce <- sce[,rev(order(colnames(sce)[sce$grey])), ]
+  
+  # generate the UMAP for the timepoint
+  p <- plotUMAP(sce, colour_by=c.by, shape_by=s.by, by_exprs_values=exp, point_size = 1) +  ggtitle(paste0(j))  + theme(plot.title=element_text(size=rel(2)))  + geom_point(aes(fill=sce$grey),colour= "grey95",  pch=21, stroke = .1, size =1.5) + scale_fill_manual(values=colours, drop=F) + theme(legend.position="none") # #+ xlim(-12.5,7.5) + ylim(-12.5, 12.5)
+  
+    # convert the UMAP dots to a single image (easier handling in Illustrator)
+  p <- AugmentPlot(plot=p, dpi=600)  
+  
+  p 
+  
+  # save the plot 
+  ggsave(paste0("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Fig 1e/grey CT D",j,".pdf"), width=9, height=9)
+}
+
+
+```

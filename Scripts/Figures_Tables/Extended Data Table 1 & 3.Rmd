@@ -1,0 +1,48 @@
+---
+title: "Supplementary Table 1"
+author: "Regan"
+date: "16/05/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+This script will generate the data in supplementary table 1 from the dataset that has been pre-processed with scripts 1-6.
+
+# Supplementary Table 1
+- number of genes counts per cluster
+```{r}
+level <- sce$sampleID
+df <- data.frame(SampleID=levels(level), Type=NA, Sex=NA, Stage=NA, Cell_Count=NA, Median_Genes=NA, Mean_Counts=NA, Mean_Normalized_Counts=NA)
+
+#want to calculate the average number of UMIs per cell per clusters, using mean()
+x <- 0
+for (i in levels(level)) {
+  x <- x+1
+  df[x,]["Sex"] <- as.character(sce$sex[level == i][1]) #median genes per cell
+  df[x,]["Stage"] <- as.character(sce$stage[level == i][1]) #median genes per cell
+  df[x,]["Type"] <- as.character(sce$fl[level == i][1]) #median genes per cell
+  df[x,]["Cell_Count"] <- length(sce$total_features_by_counts[level == i]) #number of cells
+  df[x,]["Median_Genes"] <- median(sce$total_features_by_counts[level == i]) #median genes per cell
+  df[x,]["Mean_Counts"]<- mean(sce$total_counts[level == i]) #mean of UMI counts
+  df[x,]["Mean_Normalized_Counts"] <- mean(sce$log10_total_counts[level == i]) #normalized UMI counts
+}
+
+write.csv(df, file="/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Cell metrics.csv")
+```
+
+# Supplementary table 2
+- DEGs were generated in script 6 from the Monocle3-derived clusters
+```{r}
+# load the markers 
+markers <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/k=16 cluster markers/subcluster markers.RDS")
+
+# save the markers by cluster
+for (i in 1:length(markers)) {
+  m <- markers[[i]][1:200,]
+  write.csv(m, paste0("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/k=16 cluster markers/Full list/", names(markers[i]) ," DEG.csv"))
+}
+```
+

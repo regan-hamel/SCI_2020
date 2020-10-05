@@ -1,0 +1,349 @@
+---
+title: "Extended Data Figure 5"
+author: "Regan"
+date: "16/05/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+This script will generate the scRNA-seq data figures in supplementary figure 3 from the dataset that has been pre-processed with scripts 1-6.
+
+# Extended Data Fig 5 Composition plots - cluster by stage
+- using the Monocle3-derived clusters
+
+Load the sce and set the directory
+```{r}
+rm(list=ls())
+
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dirC <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5a/"
+```
+
+Generate the area plot 
+```{r}
+library(tibble)
+library(ggplot2)
+library(plyr)
+library(RColorBrewer)
+
+CT <- "MCd"
+sce_c <- sce[,sce$cell_type == CT]
+
+# set HC to 0
+sce_c$stage <- factor(sce_c$stage, levels = c("HC","0", "1", "2", "3", "10", "21"))
+sce_c$stage[sce_c$stage == "HC"] <- 0
+
+# set the x and y values for the plot
+y <- sce_c$Clust_final_names
+x <- droplevels(factor(sce_c$stage))
+
+# create the df containing the x and y values
+df <- as.data.frame(table(y, x))
+colnames(df) <- c("y", "x", "Freq")
+
+# create data
+time <- as.numeric(levels(df$x)[df$x]) # x Axis
+value <- as.numeric(df$Freq)             # y Axis
+group <- df$y       # group, one shape per group
+data <- data.frame(time, value, group)
+
+# Compute percentages with dplyr
+library(dplyr)
+
+data <- data  %>%
+  group_by(time, group) %>%
+  summarise(n = sum(value)) %>%
+  mutate(percentage = n / sum(n))
+
+# Plot
+ggplot(data, aes(x=time, y=percentage, fill=group)) + 
+  geom_area(alpha=0.7 , size=0.5, colour="black") + ylab("Fraction of Cells Per Cluster") + scale_fill_manual(values=c("lightblue", brewer.pal(11,"RdYlGn"),"#003319","black", "grey50", "grey90"), drop=F)+ scale_x_continuous(name ="Day Post-SCI", breaks=c(0,1,2, 3, 10, 21), labels=c("0"="HC","1"="1","2"="2", "3"="3", "10"="10", "21"="21"))
+
+ggsave(paste0(dirC, CT, "-Area Plot clust vs stage.pdf"), height=5, width=7)
+```
+
+# Extended Data Fig 5b Pearson's Chi-squared test for independence, plotting the standardized residuals
+
+- Null hypothesis: cluster membership is independent of the post-SCI timepoint
+```{r}
+sce_C <- sce[,sce$stage != "HC"]
+
+# generate a contingency table
+tbl <- table(droplevels(sce_C$stage), droplevels(sce_C$Clust_final_names))
+
+# test for independence using Pearson's Chi-square
+chisq <- chisq.test(tbl)
+
+# convert the z-scores (standardized residuals) to chi square values
+chisq.val <- chisq$stdres * chisq$stdres
+
+# convert the chi square values to p values
+chi.p <- pchisq(chisq.val, df=1, lower.tail=FALSE) 
+
+# correct for multiple testing:
+# compare the chi square values to the bonferonni adjusted p value
+bf.p <- (0.05/(nrow(tbl)*ncol(tbl)))
+```
+
+Plot the chi-squared residuals
+```{r}
+library(corrplot)
+pdf(paste0("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5.pdf"))
+corrplot(chisq$stdres, p.mat=chi.p, is.cor = FALSE, sig.level = bf.p, tl.col = "black")
+dev.off()
+```
+
+Save the chi-squared results for Extended Data Table 2
+```{r}
+# write the parameters
+write.csv(x=cbind(chisq$parameter, chisq$p.value, chisq$statistic, chisq$method), file= "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Stats/Chi_parameters.csv")
+
+# write the outputs
+write.csv(x=rbind(chisq$observed, chisq$expected, chisq$residuals, chisq$stdres), file= "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Stats/Chi_all.csv")
+
+# write the converted chisquare values and p values
+write.csv(x=rbind(chisq.val, chi.p), file= "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Stats/chisq and p values.csv")
+```
+
+
+# Extended Data Fig 5c, g, h Boxplots of a single gene over all clusters 
+- using the Monocle3-derived clusters
+
+Load the sce, reorder cluster names, and set the directory
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dir <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5c, g, h/"
+```
+
+Set the genes of interest to be plotted
+```{r}
+genes <- c("Fabp5", "Csf1r", "Mki67", "Trem2", "Ccr2")
+```
+
+Generate the box plot
+```{r}
+# set the clusters
+x <- sce$Clust_final_names
+
+# generate plots for each gene
+for (i in genes) {
+  
+  # extract the log10-transformed counts for the gene of interest
+  logs <- as.numeric(logcounts(sce[i]))
+  df <- data.frame(Logs=logs, x=x)
+  
+  #plot
+  ggplot(data=df, aes(y=Logs, x=x, fill=x)) + geom_boxplot() + ggtitle(i) + theme(plot.title=element_text(hjust=0.5), axis.text.x=element_text(angle=45, hjust=1), legend.position="none") + ylab("Logcounts") + xlab("Cluster") + scale_fill_manual(values=c("lightblue", brewer.pal(11,"RdYlGn"),"#003319","black", "grey50", "grey50"))  
+  
+  # save and size
+  ggsave(paste0(dir,"byClust -", i, ".pdf"), scale=1, height=2, width=6)
+}
+```
+
+# Figure 3d UMAP displaying DAM1 genes vs DAM2 genes 
+- using Seurat to plot the expression of two genes on one UMAP
+
+Load the sce and set the directory
+```{r}
+rm(list=ls())
+sce_u <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5d -"
+```
+
+Load the function for preparing gene lists from source files
+```{r}
+source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Sources/Fxn - Prep Genes.R")
+```
+
+Establish the DAM gene lists (from Keren-Shaul et al., 2017; Figure 6)
+```{r}
+# DAM phase 1 (Trem independent)
+DAM1 <- c("Tyrobp, Ctsb, Ctsd, Apoe, B2m, Fth1, Lyz2") 
+names(DAM1) <- "DAM1"
+
+# DAM phase 2 (Trem dependent)
+DAM2 <- c("Trem2, Axl, Cst7, Ctsl, Lpl, Cd9, Csf1, Ccl6, Itgax, Clec7a, Lilrb4a, Timp2")  
+names(DAM2) <- "DAM2"
+
+# separate the string
+DAM1 <- prepG(DAM1, sep=", ", match=NULL)
+
+DAM2 <- prepG(DAM2, sep=", ", match=NULL)
+```
+
+Calculate number of DAM genes expressed per cell
+```{r}
+library(scater)
+
+#sce_u <- calculateQCMetrics(sce_u,feature_controls= list(DAM1=DAM1, DAM2=DAM2))
+sce_u$logMeanDAM2 <- colMeans(logcounts(sce_u[DAM2]))
+sce_u$logMeanDAM1 <- colMeans(logcounts(sce_u[DAM1]))
+```
+
+Plot the UMAP
+```{r}
+library(Seurat)
+
+# convert the sce to a seurat object
+seur <- as.Seurat(sce_u[,sce_u$cell_type != "NP"])#[,sce_u$partition ==1])
+
+# select the metrics to plot
+x <- "logMeanDAM1" #total_features_by_counts_DAM1 log10_total_counts_DAM1
+y <- "logMeanDAM2"
+
+# generate the UMAPs
+list <- FeaturePlot(object=seur,
+                    features=c(x, y), 
+                    cols=c("grey60", "purple", "green"), 
+                    reduction="UMAP",
+                    blend=TRUE,
+                    combine=F,
+                    blend.threshold=0,
+                    pt.size=0.5)
+
+
+# convert the UMAP dots to a single image (easier handling in Illustrator) and save
+AugmentPlot(plot=list[[3]]+NoLegend(), dpi=600)  
+ggsave(paste0(dirU, x, " vs ", y,", FIG6.pdf"), scale=0.75, width=7, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+
+# plot and save the legend
+list[[4]]+NoLegend()
+ggsave(paste0(dirU, x, "vs", y, "legend.pdf"), scale=0.75, width=8, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+```
+
+# Extended Data Figure 5e UMAP displaying Fabp5 vs Trem2 expression
+- using Seurat to plot the expression of two genes on one UMAP
+
+Load the sce and set the directory
+```{r}
+rm(list=ls())
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+# remove neutrophils
+NP <- sce@int_colData@listData[["reducedDims"]]@listData[["UMAP"]][,1] < -5
+sce_u <- sce[, !NP]
+
+dirU <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5e-"
+```
+
+Plot the UMAP
+```{r}
+library(Seurat)
+library(ggplot2)
+
+# convert the sce to a seurat object
+seur <- as.Seurat(sce_u, data = "logcounts", assay="logcounts")
+
+# select the genes to plot
+x <- "Trem2" 
+y <- "Fabp5"
+
+# generate the UMAPs
+list <- FeaturePlot(object=seur,
+                    features=c(x, y), 
+                    cols=c("grey60", "purple", "green"), 
+                    reduction="UMAP",
+                    blend=TRUE,
+                    combine=F,
+                    blend.threshold=0,
+                    pt.size=1)
+
+# convert the UMAP dots to a single image (easier handling in Illustrator)
+AugmentPlot(plot=list[[3]]+NoLegend() + labs(title=NULL), dpi=600)  
+
+# plot and save the UMAP without a legend (to be plotted separtely)
+ggsave(paste0(dirU, x, " vs ", y, ".pdf"), scale=0.75, width=7, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+
+# plot and save the legend
+list[[4]]+NoLegend()
+ggsave(paste0(dirU, x, "vs", y, "legend.pdf"), scale=0.75, width=8, height=8,units=c("in", "cm", "mm"), dpi=300, limitsize=TRUE)
+```
+
+# Extended Data Fig 5f Heatmap of cell cycling genes
+
+Load the sce and set the directory
+```{r}
+rm(list=ls())
+sce_hm_all <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+dirH <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5f/"
+
+# the plotHeatmap function requires unique column names, rename any duplicated columns in the sce object
+colnames(sce_hm_all) <- make.unique(colnames(sce_hm_all), sep="X")
+```
+
+Set the genes for the heatmap
+```{r}
+#  read in a list of cell cycle markers, from Tirosh et al., 2015
+cc.genes <- readLines(con="/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/cell_cycle_vignette_files/regev_lab_cell_cycle_genes.txt")
+cc.genes <- stringr::str_to_title(cc.genes)
+
+# s phase vs g2-m phase genes for label reference
+s.genes <- cc.genes[1:43]
+g2m.genes <- cc.genes[44:97]
+
+# load the function for preparing gene lists from source file
+source("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/Regan et al 202X/Sources/Fxn - Prep Genes.R")
+
+# format the list of genes gfor the plotHeatmap function
+input <- prepG(cc.genes, sep=",")
+
+# remove any genes not in the sce
+input <- match(input, rownames(sce_hm_all))
+input <- input[!is.na(input)]
+```
+
+Generate the heatmaps for each cell type of interest 
+```{r}
+library(scater)
+
+# set the cell type
+CT <- "MCd" #"MG"
+sce_hm <- sce_hm_all[,sce_hm_all$cell_type == CT]
+
+# plot and save the heatmap
+plotHeatmap(sce_hm, features=input, exprs_values="logcounts", cellheight=4, cellwidth=0.03,
+            zlim=NULL, center=FALSE, symmetric=FALSE, cluster_cols=FALSE,cluster_rows=F,
+            colour_columns_by=c("stage","Clust_final_names"), columns=order(sce_hm$Clust_final_names), main= paste("S-G2-M Phase Genes"), fontsize_row=5, fontsize_col=0.2, treeheight_col=40, file=paste0(dirH, "S-G2-M Phase Genes stage", CT, ".pdf"))  
+```
+
+# Extended Data Fig 5i Heatmap of MG(A2) cluster DEGs
+- DEGs were generated in script 6 from the Monocle3-derived clusters
+
+Load the sce and markers, and set the directory
+```{r}
+rm(list=ls())
+
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce.RDS")
+
+markers <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Monocle/k=16 cluster markers/subcluster markers.RDS")
+
+dirH <- "/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/Hamel et al 202X/Extended Data Fig 5i - MG(A2).pdf"
+```
+
+Extract the Cremato cells from cluster 2-MG
+```{r}
+sce_c <- sce[,sce$Clust_final_names == "MG(A2)" & sce$strain != "Cx3"]
+sce_c$fl <- droplevels(factor(sce_c$fl))
+```
+
+Set the genes for the heatmap
+```{r}
+# The top 30 MG(A2) DEGs, resident MG marker Serpine2 and infiltrating marker Gpnmb
+input <- c("Serpine2", "Gpnmb", rownames(markers[[2]])[1:30]) 
+```
+
+Plot the heatmap
+```{r}
+library(scater)
+
+#plot and save the heatmap
+plotHeatmap(sce_c, features=input, exprs_values="logcounts", cellheight=5,
+            zlim=NULL, center=FALSE, symmetric=FALSE, cluster_cols=F, cluster_rows=T,
+            colour_columns_by=c("fl"), columns=order(sce_c$fl), fontsize_row=5, fontsize_col=0.1, treeheight_col=10, file=dirH, fontsize=7)
+```
