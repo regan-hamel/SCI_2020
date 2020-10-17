@@ -1,7 +1,6 @@
 library(shiny)
 library(shinythemes)
 
-source("helpers.R")
 
 shinyUI(fluidPage(
   
@@ -20,7 +19,7 @@ shinyUI(fluidPage(
                           submitButton("Submit", icon("refresh")),
                           br(),
                           helpText("Input the gene of interest to visualize on the plot. To visualize the average expression of a set of genes, separate each gene with a comma (max 50 genes)"),
-                          textInput("GeneInput", label = "Gene Plot", value = "Serpine2", placeholder = "Gene Symbol(s)"),
+                          textInput("GeneInput", label = "Gene Plot", value = "Fabp5", placeholder = "Gene Symbol(s)"),
                           submitButton("Submit", icon("refresh"))),
                         
                         mainPanel(
