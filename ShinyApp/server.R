@@ -6,17 +6,17 @@ shinyServer(
   function(input, output) {
     
     output$UMAP_R <- renderPlot({
-      UMAP_r <- UMAPs(sce, colour_by=input$RefInput, title="Reference Plot") 
+      UMAP_r <- ref_UMAP(colour_by=input$RefInput) 
       UMAP_r
     })
     
     output$UMAP_G <- renderPlot({
-      UMAP_g <- UMAPs(sce, colour_by=input$GeneInput, title="Gene Plot") 
+      UMAP_g <- gene_UMAP(gene=input$GeneInput) 
       UMAP_g
     })
     
     output$boxplot <- renderPlot({
-      boxp <- boxPlot(sce, gene=input$GeneInput, subset_name=input$RefInput) 
+      boxp <- boxPlot(gene=input$GeneInput, subset_name=input$RefInput) 
       boxp
     })
     
@@ -58,8 +58,8 @@ shinyServer(
         paste0(input$RefInput, "-", input$GeneInput, "-UMAP.pdf")
       },
       content = function(file) {
-        p <- UMAPs(sce, colour_by=input$RefInput, title=NULL)
-        p2 <- UMAPs(sce, colour_by=input$GeneInput, title=NULL)
+        p <- ref_UMAP(colour_by=input$RefInput, title=NULL)
+        p2 <- gene_UMAP(gene=input$GeneInput, title=NULL)
         
         pdf(file)
         print(p)
@@ -73,7 +73,7 @@ shinyServer(
         paste0(input$RefInput, "-", input$GeneInput, "-Boxplot.pdf")
       },
       content = function(file) {
-        b <- boxPlot(sce, gene=input$GeneInput, subset_name=input$RefInput) 
+        b <- boxPlot(gene=input$GeneInput, subset_name=input$RefInput) 
         pdf(file)
         print(b)
         dev.off()
