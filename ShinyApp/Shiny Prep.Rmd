@@ -1,0 +1,49 @@
+---
+title: "Shiny_prep"
+author: "Regan"
+date: "07/10/2020"
+output: html_document
+---
+
+The app must be compatible with R v3.5.2
+
+# load sce
+```{r}
+sce <- readRDS("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/Cx3cr1 Data/Universal Workflow/Cell Ranger 3.1.0/SCI/May 2020/BC/sce_Shiny.RDS")
+```
+
+
+# convert the sce to relevant matrices and save to RData file (very fast to load)
+
+#logcounts
+```{r}
+library(scater)
+library(Matrix)
+
+# keep logs as a sparse matrix (less memory intensive)
+sce_logs <- logcounts(sce)
+class(sce_logs)
+```
+
+# UMAP dimensions
+```{r}
+library(scater)
+umap <- as.matrix(reducedDim(sce))
+```
+
+# column data
+```{r}
+cd <- as.data.frame(colData(sce))
+
+head(cd)
+class(cd)
+```
+
+
+```{r}
+rm(sce)
+```
+
+```{r}
+save.image("/Users/reganhamel/Dropbox (Cambridge University)/Lab/Regan/SCI scRNA-seq Project/scRNAseq Workflow/SCI_2020/ShinyApp/Data/sce.RData")
+```
