@@ -17,4 +17,4 @@ To replicate or explore our findings, download the data (fastq [requires Cell Ra
          + `Fxn - qcPlots`: a function for quickly generating qplots and data frames containing quality control metrics. Used only in `4. QC.Rmd` 
          + `Fxn - Quick Analysis`: a function to quickly generate a UMAP plot (no-QC) and cluster a sce for the use of comparing pre- and post-SoupX results in `3. SoupX.Rmd`
 
-- `ShinyApp`: contains the scripts we used to build the spinal cord injury myeloid cell atlas that can be used to interactively browse and download the data (<a href="link here when availableXX" target="_blank">link will be here asap</a>)
+- `ShinyApp`: contains the scripts we used to build the spinal cord injury myeloid cell (<a href="https://marionilab.cruk.cam.ac.uk/SCI_Myeloid_Cell_Atlas/" target="_blank">atlasp</a>) that can be used to interactively browse and download the data 
