@@ -28,7 +28,7 @@ Using the 10X Genomics Chromium platform, we single cell RNA-sequenced 30,958 my
 <br>
 
 #### Links
-- The data is also available at GEO <a href="link hereXX" target="_blank"> GSE-XXX </a>
+- The data is also available at GEO <https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE159638" target="_blank"> GSE159638 </a>
 - <a href="https://github.com/regan-hamel/SCI_2020" target="_blank"> regan-hamel Github</a> containing all the scripts for the website, analyses, and figures
 - <a href="https://github.com/MarioniLab/" target="_blank"> Marioni Github </a> for many of the packages used in the low level processing of this dataset
 - <a href="https://www.pluchinolab.org/" target="_blank"> Pluchino Lab </a>
