@@ -1,6 +1,8 @@
 ## SCI_2020
  
-This repository contains the analysis scripts from our recent pre-print: <a href="link here when availableXX" target="_blank"> Hamel R, <i>et al</i>. Time-resolved single-cell RNAseq profiling identifies a novel Fabp5-expressing subpopulation of inflammatory myeloid cells in chronic spinal cord injury. <i>bioRxiv</i> XXXX (2020) - BioRxiv link will be here asap</a>
+This repository contains the analysis scripts from our recent pre-print: <a href="link here when availableXX" target="_blank"> Hamel R, <i>et al</i>. Time-resolved single-cell RNAseq profiling identifies a novel Fabp5-expressing subpopulation of inflammatory myeloid cells in chronic spinal cord injury. <i>bioRxiv</i> XXXX (2020) - BioRxiv link will be here asap</a>.
+
+GSE159638
 
 To replicate or explore our findings, download the data (fastq [requires Cell Ranger, then script 1], raw counts [insert to script 3] , or normalised counts [insert to script 4+]) from the GEO (TBD) and process them with the scripts in this repository.
 
