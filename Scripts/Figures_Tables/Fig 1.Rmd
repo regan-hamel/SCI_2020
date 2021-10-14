@@ -235,8 +235,10 @@ for (j in days) {
   sce$grey <- factor(col, levels=c( levels(col), "grey"))
   sce$grey[grey] <- "grey"
   
+  library(dplyr)
   #sort the cells in order to have the grey cells last (and therefore underneath)
-  sce <- sce[,rev(order(colnames(sce)[sce$grey])), ]
+  sce <- sce[, sce$grey == j] %>% cbind(sce[, sce$grey == "grey"])
+
   
   # generate the UMAP for the timepoint
   p <- plotUMAP(sce, colour_by=c.by, shape_by=s.by, by_exprs_values=exp, point_size = 1) +  ggtitle(paste0(j))  + theme(plot.title=element_text(size=rel(2)))  + geom_point(aes(fill=sce$grey),colour= "grey95",  pch=21, stroke = .1, size =1.5) + scale_fill_manual(values=colours, drop=F) + theme(legend.position="none") # #+ xlim(-12.5,7.5) + ylim(-12.5, 12.5)
