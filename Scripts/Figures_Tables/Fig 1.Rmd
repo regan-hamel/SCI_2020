@@ -57,11 +57,11 @@ for (j in levels(level)) {
   sce$grey <- factor(col, levels=c(levels(col), "grey"))
   sce$grey[grey] <- "grey"
   
-  #sort the cells in order to have the grey cells last (and therefore underneath)
-  sce <- sce[,rev(order(colnames(sce)[sce$grey]))]
-  
-  # generate the UMAP for the timepoint
-  p <- plotUMAP(sce, colour_by="grey",by_exprs_values="logcounts", point_size = 1) +  ggtitle(paste0(j))  + theme(plot.title=element_text(size=rel(2)))   + geom_point(aes(fill=colData(sce)$grey), colour="grey95", pch=21, stroke = .1, size =1.5, alpha = 0.6) + scale_fill_manual(values=colours, drop=F)+ theme(legend.position="none")
+ #sort the cells in order to have the grey cells last (and therefore underneath)
+sce <- sce[, sce$grey == "grey"] %>% cbind(sce[, sce$grey == j])
+
+# generate the UMAP for the timepoint
+plotUMAP(sce, colour_by="grey",by_exprs_values="logcounts", point_size = 0) +  ggtitle(paste0(j))  + theme(plot.title=element_text(size=rel(2)), legend.position="none")   +scale_fill_manual(values=c(colours[4], rep("grey60", 4), drop=T), aesthetics = "fill") + geom_point(aes(fill=sce$grey), colour=colours[4], pch=21, stroke = .1, size =1.5, alpha = 1) #
   
   # convert the UMAP dots to a single image (easier handling in Illustrator)
   p <- AugmentPlot(plot=p, dpi=600)  
